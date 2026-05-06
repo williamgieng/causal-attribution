@@ -194,35 +194,31 @@ for term in ['post:A', 'post:B', 'post:A:B']:
     coef, se = did_model.params[term], did_model.bse[term]
     print(f'  {term:12s}: {coef:+.4f}  (SE {se:.4f})')
 
-# Restrict to initiative_complete == 0 to isolate the promo effect
+# Restrict to initiative_complete == 0 to isolate the promo effect.
 event_panel = panel[panel['B'] == 0].copy()
 
-pivot   = event_panel.pivot_table(index='week', columns='A', values='churn_rate')
-pivot_n = event_panel.pivot_table(index='week', columns='A', values='at_risk', aggfunc='sum')
+# Pivot so each column is one cohort (A=0 vs A=1), each row is one week.
+pivot = event_panel.pivot_table(index='week', columns='A', values='churn_rate')
 
-def diff_se(p1, n1, p0, n0):
-    """Approximate standard error for the difference of two binomial proportions."""
-    return np.sqrt(p1 * (1 - p1) / np.maximum(n1, 1) +
-                   p0 * (1 - p0) / np.maximum(n0, 1))
+# Center each cohort's hazard at its own pre-renewal mean.
+# This makes the chart show "relative" hazard, so both cohorts start near zero.
+pre_period = pivot[pivot.index < 0]
+pivot_centered = pivot - pre_period.mean()
 
-ec = pd.DataFrame({
-    'week': pivot.index,
-    'coef': (pivot[1] - pivot[0]).values,
-    'se':   diff_se(pivot[1].values, pivot_n[1].values,
-                    pivot[0].values, pivot_n[0].values),
-}).sort_values('week')
-
+# Plot the two lines: promo-expired cohort vs comparison cohort.
 fig, ax = plt.subplots(figsize=(7.5, 3.8))
-ax.axvline(0, color='black', linestyle='--', linewidth=1, alpha=0.6, label='Renewal date')
+ax.axvline(0, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Renewal date')
 ax.axhline(0, color=GRAY, linewidth=0.8, alpha=0.5)
-ax.errorbar(ec['week'], ec['coef'], yerr=1.96 * ec['se'],
-            fmt='o', markersize=3, color=BLUE, capsize=2,
-            elinewidth=0.8, label='Promo effect (A=1 minus A=0)')
+ax.plot(pivot_centered.index, pivot_centered[1],
+        color=BLUE, linewidth=1.8, label='Promo-expired cohort')
+ax.plot(pivot_centered.index, pivot_centered[0],
+        color=ORANGE, linewidth=1.8, linestyle='--', label='Comparison cohort')
+
 ax.set_xlabel('Weeks relative to renewal')
-ax.set_ylabel('Weekly hazard gap')
+ax.set_ylabel('Weekly churn hazard (relative)')
 ax.set_title('Event study: parallel trends diagnostic',
              fontsize=11, fontweight='bold', color=DARK, pad=10)
-ax.legend(fontsize=9, framealpha=0)
+ax.legend(fontsize=9, framealpha=0, loc='upper left')
 ax.yaxis.grid(True, linestyle='--', alpha=0.4); ax.set_axisbelow(True)
 plt.tight_layout()
 plt.savefig('figures/fig2_event_study.png', dpi=160, bbox_inches='tight')
